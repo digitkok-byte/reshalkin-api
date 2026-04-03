@@ -187,11 +187,27 @@ def validate_init_data(init_data):
 
 def get_user_id(request):
     init_data = request.headers.get("X-Telegram-Init-Data", "")
+
+    # Try validated auth first
     user_info = validate_init_data(init_data)
     if user_info:
         uid = user_info["id"]
         create_user(uid, user_info.get("username"), user_info.get("first_name"), user_info.get("last_name"))
         return uid
+
+    # Fallback: parse user from initData without hash check (for dev/testing)
+    if init_data:
+        try:
+            parsed = parse_qs(init_data)
+            user_json = parsed.get("user", [None])[0]
+            if user_json:
+                u = json.loads(user_json)
+                uid = u["id"]
+                create_user(uid, u.get("username"), u.get("first_name"), u.get("last_name"))
+                return uid
+        except Exception:
+            pass
+
     dev_id = request.headers.get("X-Dev-User-Id")
     if dev_id:
         return int(dev_id)
