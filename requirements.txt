@@ -1,0 +1,4 @@
+fastapi==0.135.3
+uvicorn==0.42.0
+python-multipart==0.0.22
+aiohttp==3.11.18
