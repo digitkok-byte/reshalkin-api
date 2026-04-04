@@ -195,27 +195,20 @@ def get_user_id(request):
         create_user(uid, user_info.get("username"), user_info.get("first_name"), user_info.get("last_name"))
         return uid
 
-    # Fallback: parse user from initData without hash check (for dev/testing)
-    if init_data:
-        try:
-            parsed = parse_qs(init_data)
-            user_json = parsed.get("user", [None])[0]
-            if user_json:
-                u = json.loads(user_json)
-                uid = u["id"]
-                create_user(uid, u.get("username"), u.get("first_name"), u.get("last_name"))
-                return uid
-        except Exception:
-            pass
-
-    dev_id = request.headers.get("X-Dev-User-Id")
-    if dev_id:
-        return int(dev_id)
     raise HTTPException(status_code=401, detail="Unauthorized")
 
 # ===== APP =====
 app = FastAPI(title="Решалкин API")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+ALLOWED_ORIGINS = [
+    "https://reshalkin-webapp.vercel.app",
+    "https://digitkok-byte.github.io",
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Telegram-Init-Data"],
+)
 
 @app.on_event("startup")
 def startup():
