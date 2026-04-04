@@ -287,11 +287,29 @@ async def solve_photo(request: Request, photo: UploadFile = File(...), caption: 
 @app.post("/api/check")
 async def check(request: Request):
     uid = get_user_id(request)
-    body = await request.json()
-    solution = body.get("solution", "").strip()
-    if not solution:
-        raise HTTPException(400, "Empty solution")
-    answer = await check_solution_llm(solution)
+    content_type = request.headers.get("content-type", "")
+    image_data = None
+    mime_type = None
+    solution = ""
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        solution = (form.get("solution") or "").strip()
+        photo = form.get("photo")
+        if photo and hasattr(photo, "read"):
+            image_data = await photo.read()
+            mime_type = getattr(photo, "content_type", "image/jpeg") or "image/jpeg"
+        if not solution and not image_data:
+            raise HTTPException(400, "Empty solution")
+        if not solution:
+            solution = "Проверь решение на фото."
+    else:
+        body = await request.json()
+        solution = body.get("solution", "").strip()
+        if not solution:
+            raise HTTPException(400, "Empty solution")
+
+    answer = await check_solution_llm(solution, image_data=image_data, mime_type=mime_type)
     increment_solutions(uid)
     log_request(uid, "general", "check", solution, answer)
     return {"answer": answer}
