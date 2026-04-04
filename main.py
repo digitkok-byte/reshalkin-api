@@ -119,14 +119,20 @@ SYSTEM_PROMPT = """Ты — школьный репетитор. Отвечай 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 async def call_llm(messages):
+    if not OPENROUTER_API_KEY:
+        raise Exception("OPENROUTER_API_KEY not set")
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
     payload = {"model": OPENROUTER_MODEL, "messages": messages, "temperature": 0.3, "max_tokens": 2048}
-    async with aiohttp.ClientSession() as session:
-        async with session.post(OPENROUTER_URL, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-            if resp.status != 200:
-                raise Exception(f"LLM error {resp.status}: {await resp.text()}")
-            data = await resp.json()
-    return data["choices"][0]["message"]["content"]
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(OPENROUTER_URL, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=90)) as resp:
+                if resp.status != 200:
+                    err_text = await resp.text()
+                    raise Exception(f"LLM error {resp.status}: {err_text[:200]}")
+                data = await resp.json()
+        return data["choices"][0]["message"]["content"]
+    except aiohttp.ClientError as e:
+        raise Exception(f"Network error calling LLM: {e}")
 
 async def ask_gemini(question, image_data=None, mime_type=None):
     content = []
@@ -234,7 +240,13 @@ def startup():
 
 @app.get("/")
 async def health():
-    return {"status": "ok", "service": "reshalkin-api"}
+    return {
+        "status": "ok",
+        "service": "reshalkin-api",
+        "has_openrouter_key": bool(OPENROUTER_API_KEY),
+        "has_bot_token": bool(TELEGRAM_BOT_TOKEN),
+        "model": OPENROUTER_MODEL,
+    }
 
 @app.get("/api/profile")
 async def profile(request: Request):
@@ -251,7 +263,10 @@ async def solve_text(request: Request):
     question = body.get("question", "").strip()
     if not question:
         raise HTTPException(400, "Empty question")
-    answer = await ask_gemini(question)
+    try:
+        answer = await ask_gemini(question)
+    except Exception as e:
+        raise HTTPException(502, f"LLM error: {e}")
     increment_solutions(uid)
     log_request(uid, "general", "text", question, answer)
     return {"answer": answer}
@@ -261,7 +276,10 @@ async def solve_photo(request: Request, photo: UploadFile = File(...), caption: 
     uid = get_user_id(request)
     image_bytes = await photo.read()
     text = caption or "Реши задачу на фото."
-    answer = await ask_gemini(text, image_data=image_bytes, mime_type=photo.content_type or "image/jpeg")
+    try:
+        answer = await ask_gemini(text, image_data=image_bytes, mime_type=photo.content_type or "image/jpeg")
+    except Exception as e:
+        raise HTTPException(502, f"LLM error: {e}")
     increment_solutions(uid)
     log_request(uid, "general", "photo", text, answer)
     return {"answer": answer}
